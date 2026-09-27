@@ -1,0 +1,357 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Bear Tracker &middot; Driver</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 26px 20px calc(40px + env(safe-area-inset-bottom));
+    background: #0b1220; color: #eef2f9;
+    font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    max-width: 480px; margin-inline: auto;
+  }
+  h1 { margin: 0 0 4px; font-size: 19px; text-align: center; letter-spacing: .3px; }
+  .sub { color: #93a1bd; font-size: 13px; text-align: center; margin: 0 0 24px; }
+
+  .swap {
+    display: block; margin: 0 auto 22px;
+    padding: 5px 12px; border-radius: 999px;
+    border: 1px solid #2a3651; background: #131c2e; color: #93a1bd;
+    font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;
+  }
+  .swap:active { background: #24314e; }
+
+  .section-title {
+    margin: 30px 0 10px;
+    font-size: 12px; font-weight: 700; letter-spacing: .9px; text-transform: uppercase;
+    color: #93a1bd;
+  }
+
+  /* --- the tracking switch --- */
+  .track { text-align: center; }
+  #toggle {
+    width: 190px; height: 190px; border-radius: 50%;
+    border: none; cursor: pointer;
+    background: #22c55e; color: #06240f;
+    font-size: 25px; font-weight: 800; letter-spacing: .5px;
+    box-shadow: 0 10px 40px rgba(34,197,94,.35);
+    transition: background .2s, box-shadow .2s, color .2s;
+  }
+  #toggle.on { background: #ef4444; color: #fff; box-shadow: 0 10px 40px rgba(239,68,68,.35); }
+
+  #status { margin-top: 16px; font-size: 14px; color: #93a1bd; min-height: 44px; }
+  #status strong { color: #eef2f9; }
+  .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #22c55e; margin-right: 6px; }
+  @keyframes blink { 50% { opacity: .25; } }
+  .dot.live { animation: blink 1.4s infinite; }
+  .warn { color: #fcd34d; }
+
+  /* --- announcement buttons ---
+     Big targets, two per row. A driver should be able to hit one without
+     looking hard, and never has to type while moving. */
+  .presets { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
+  .preset {
+    padding: 17px 12px;
+    border: 1px solid #2a3651; border-radius: 13px;
+    background: #131c2e; color: #eef2f9;
+    font: inherit; font-weight: 600; font-size: 15px;
+    cursor: pointer; text-align: left;
+    display: flex; align-items: center; gap: 9px;
+  }
+  .preset:active { background: #1e2a44; }
+  .preset .pip { flex: none; width: 9px; height: 9px; border-radius: 50%; }
+  .preset[data-level="urgent"] { border-color: rgba(239,68,68,.45); }
+  .preset[data-level="urgent"] .pip { background: #ef4444; }
+  .preset[data-level="warn"]   .pip { background: #f59e0b; }
+  .preset[data-level="info"]   .pip { background: #60a5fa; }
+
+  /* --- what's currently posted --- */
+  .posted { display: flex; flex-direction: column; gap: 8px; }
+  .item {
+    display: flex; align-items: flex-start; gap: 11px;
+    padding: 13px 14px; border-radius: 13px;
+    border: 1px solid #2a3651; background: #131c2e;
+    font-size: 14px;
+  }
+  .item.urgent { border-color: rgba(239,68,68,.5); background: rgba(239,68,68,.1); }
+  .item.warn   { border-color: rgba(245,158,11,.45); background: rgba(245,158,11,.09); }
+  .item .grow { flex: 1; }
+  .item .when { color: #93a1bd; font-size: 12px; margin-top: 3px; }
+  .item button {
+    flex: none; width: 34px; height: 34px; border-radius: 50%;
+    border: 1px solid #2a3651; background: #0b1220; color: #93a1bd;
+    font-size: 17px; line-height: 1; cursor: pointer;
+  }
+  .none { color: #6b7a99; font-size: 14px; font-style: italic; }
+
+  /* --- what students have tapped --- */
+  .waiting { display: flex; flex-direction: column; gap: 7px; }
+  .wrow {
+    display: flex; align-items: center; gap: 11px;
+    padding: 12px 14px; border-radius: 13px;
+    border: 1px solid #2a3651; background: #131c2e; font-size: 14px;
+  }
+  .wrow.alert { border-color: rgba(245,158,11,.5); background: rgba(245,158,11,.1); }
+  .wrow .head {
+    flex: none; min-width: 34px; height: 34px; padding: 0 9px; border-radius: 999px;
+    display: grid; place-items: center; background: #1e3a2a; color: #4ade80;
+    font-weight: 800; font-size: 15px;
+  }
+  .wrow .grow { flex: 1; min-width: 0; }
+  .wrow .nm { font-weight: 700; }
+  .wrow .why { color: #93a1bd; font-size: 12.5px; margin-top: 2px; }
+
+  /* --- typed message --- */
+  .compose { display: flex; gap: 8px; }
+  .compose input {
+    flex: 1; min-width: 0; padding: 14px;
+    border: 1px solid #2a3651; border-radius: 12px;
+    background: #0e1626; color: #eef2f9; font: inherit;
+  }
+  .compose button {
+    padding: 0 20px; border: none; border-radius: 12px;
+    background: #1d4ed8; color: #fff; font: inherit; font-weight: 700; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<h1>&#128062; Bear Tracker &middot; Driver</h1>
+<p class="sub">Tap START at the beginning of your shift.</p>
+<button class="swap" type="button" onclick="switchRole()">Driver &#8646;</button>
+
+<div class="track">
+  <button id="toggle" type="button">START</button>
+  <div id="status">Not sharing location.</div>
+</div>
+
+<div class="section-title">Waiting ahead</div>
+<div class="waiting" id="waiting"></div>
+
+<div class="section-title">Write a message</div>
+<div class="compose">
+  <input id="message" type="text" maxlength="200" placeholder="Tell students what's going on">
+  <button id="send" type="button">Post</button>
+</div>
+
+<div class="section-title">Or tap a common one</div>
+<div class="presets">
+  {% for key, preset in presets.items() %}
+  <button class="preset" type="button" data-preset="{{ key }}" data-level="{{ preset.level }}">
+    <span class="pip"></span>{{ preset.button }}
+  </button>
+  {% endfor %}
+</div>
+
+<div class="section-title">Showing to students right now</div>
+<div class="posted" id="posted"><span class="none">Nothing posted.</span></div>
+
+<script>
+/* This page does two jobs:
+   1. send the phone's GPS to the server  (the START button)
+   2. post announcements to the server    (the buttons below)                 */
+
+
+/* =====================  1. TRACKING  ===================================== */
+
+const button = document.getElementById("toggle");
+const status = document.getElementById("status");
+
+let watchId = null;   // the browser's handle on the GPS watch
+let sent = 0;         // how many positions we've sent, just to show it's alive
+
+function start() {
+  if (!navigator.geolocation) {
+    status.textContent = "This phone's browser can't share location.";
+    return;
+  }
+
+  // watchPosition calls us EVERY time the phone gets a new GPS fix - roughly
+  // every 1-3 seconds while moving. We don't have to ask on a timer.
+  watchId = navigator.geolocation.watchPosition(onPosition, onError, {
+    enableHighAccuracy: true,   // use real GPS, not the cell-tower estimate
+    maximumAge: 2000,
+    timeout: 15000,
+  });
+
+  button.textContent = "STOP";
+  button.classList.add("on");
+  status.innerHTML = "Starting GPS&hellip;";
+}
+
+function stop() {
+  navigator.geolocation.clearWatch(watchId);
+  watchId = null;
+  sent = 0;
+
+  // Tell the server explicitly, so students see "no shuttle" straight away
+  // instead of waiting out the silence timer.
+  fetch("/api/off-duty", { method: "POST" }).catch(() => {});
+  button.textContent = "START";
+  button.classList.remove("on");
+  status.textContent = "Not sharing location. Students can't see this shuttle.";
+}
+
+function onPosition(position) {
+  const c = position.coords;
+  sent++;
+
+  fetch("/api/location", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ lat: c.latitude, lng: c.longitude, heading: c.heading }),
+  }).catch(() => {
+    status.innerHTML = '<span class="warn">Lost connection to the server. Still trying&hellip;</span>';
+  });
+
+  status.innerHTML = `<span class="dot live"></span><strong>Students can see you.</strong><br>
+    ${sent} location${sent === 1 ? "" : "s"} sent &middot; accurate to about ${Math.round(c.accuracy)}m`;
+}
+
+function onError(err) {
+  // Most common by far: the driver tapped "Block" on the location prompt,
+  // or the page isn't being served over https.
+  status.innerHTML = `<span class="warn">Can't read GPS: ${err.message}</span>`;
+  stop();
+}
+
+button.addEventListener("click", () => (watchId === null ? start() : stop()));
+
+
+/* Forget the saved role and go back to the picker. The ?pick is what stops
+   the picker forwarding straight back here on arrival. */
+function switchRole() {
+  try { localStorage.removeItem("bear-role"); } catch (err) { /* private mode */ }
+  location.href = "/?pick=1";
+}
+
+
+/* =====================  2. ANNOUNCEMENTS  ================================ */
+
+const posted = document.getElementById("posted");
+
+function draw(list) {
+  if (!list.length) {
+    posted.innerHTML = '<span class="none">Nothing posted.</span>';
+    return;
+  }
+  posted.innerHTML = list
+    .map((a) => {
+      const mins = Math.round((Date.now() / 1000 - a.posted_at) / 60);
+      const left = Math.round((a.expires_at - Date.now() / 1000) / 60);
+      return `<div class="item ${a.level}">
+          <div class="grow">${escapeHtml(a.text)}
+            <div class="when">Posted ${mins < 1 ? "just now" : mins + " min ago"}
+              &middot; clears itself in ${left} min</div></div>
+          <button type="button" data-clear="${a.id}" aria-label="Remove">&times;</button>
+        </div>`;
+    })
+    .join("");
+}
+
+// A driver's typed message is shown to students, so never trust it as HTML.
+function escapeHtml(text) {
+  const d = document.createElement("div");
+  d.textContent = text;
+  return d.innerHTML;
+}
+
+function post(body) {
+  fetch("/api/announcements", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  })
+    .then((r) => r.json())
+    .then((d) => d.announcements && draw(d.announcements))
+    .catch(() => {});
+}
+
+document.querySelectorAll(".preset").forEach((el) => {
+  el.addEventListener("click", () => post({ preset: el.dataset.preset }));
+});
+
+const messageBox = document.getElementById("message");
+
+function sendMessage() {
+  const message = messageBox.value.trim();
+  if (!message) return;
+  post({ message });
+  messageBox.value = "";
+  messageBox.blur();   // drop the keyboard on a phone
+}
+
+document.getElementById("send").addEventListener("click", sendMessage);
+messageBox.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") sendMessage();
+});
+
+posted.addEventListener("click", (event) => {
+  const id = event.target.dataset && event.target.dataset.clear;
+  if (!id) return;
+  fetch(`/api/announcements/${id}`, { method: "DELETE" })
+    .then((r) => r.json())
+    .then((d) => draw(d.announcements))
+    .catch(() => {});
+});
+
+// Keep the list fresh - announcements expire on their own, so what's on
+// screen would otherwise slowly drift out of date.
+function refresh() {
+  fetch("/api/announcements")
+    .then((r) => r.json())
+    .then((d) => draw(d.announcements))
+    .catch(() => {});
+}
+refresh();
+setInterval(refresh, 15000);
+
+
+/* =====================  3. WHAT STUDENTS TAPPED  ========================= */
+//
+// The way back. Students can't type - they tap fixed buttons on their own
+// stop - so everything that lands here is a count, never a sentence. Nothing
+// to read, nothing to moderate, nothing that could be abusive. Just how many
+// people are standing where, ordered so the next stop is at the top.
+
+const waitingBox = document.getElementById("waiting");
+
+function drawWaiting(data) {
+  if (!data.stops.length) {
+    waitingBox.innerHTML = '<span class="none">Nobody has tapped in.</span>';
+    return;
+  }
+
+  waitingBox.innerHTML = data.stops.map((s) => {
+    const heads = s.counts.waiting || 0;
+
+    // Anything other than "I'm waiting" is a problem worth flagging in amber.
+    const problems = Object.entries(s.counts)
+      .filter(([kind]) => kind !== "waiting")
+      .map(([kind, n]) => `${n} ${data.kinds[kind] ? data.kinds[kind].summary : kind}`);
+
+    return `<div class="wrow ${problems.length ? "alert" : ""}">
+        <span class="head">${heads || "&middot;"}</span>
+        <span class="grow">
+          <span class="nm">${escapeHtml(s.name)}</span>
+          <div class="why">${heads ? heads + " waiting" : "no one waiting"}${
+            problems.length ? " &middot; " + escapeHtml(problems.join(", ")) : ""}</div>
+        </span>
+      </div>`;
+  }).join("");
+}
+
+function refreshWaiting() {
+  fetch("/api/reports")
+    .then((r) => r.json())
+    .then(drawWaiting)
+    .catch(() => {});
+}
+refreshWaiting();
+setInterval(refreshWaiting, 10000);
+</script>
+
+</body>
+</html>

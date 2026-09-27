@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+env/
+
+# Live announcements the driver has posted. This is running state, not source -
+# whatever happens to be on screen when you commit is not something anyone
+# cloning the repo should inherit.
+announcements.json
+
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

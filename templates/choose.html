@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>Bear Tracker</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: #0b1220; }
+  body {
+    font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    color: #eef2f9;
+    display: flex; flex-direction: column; justify-content: center;
+    min-height: 100vh; padding: 32px 16px max(32px, env(safe-area-inset-bottom));
+  }
+
+  /* While we're deciding whether to forward a returning user, show nothing.
+     A chooser that flashes up for 40ms and vanishes looks like a glitch. */
+  body.deciding { visibility: hidden; }
+
+  .wrap { width: 100%; max-width: 420px; margin: 0 auto; }
+
+  .brand { text-align: center; margin-bottom: 30px; }
+  .brand .name { font-size: 27px; font-weight: 800; letter-spacing: -.02em; }
+  .brand .tag { color: #93a1bd; font-size: 13px; font-weight: 600; margin-top: 5px; }
+
+  .ask { font-size: 14px; font-weight: 600; color: #93a1bd; margin-bottom: 12px; }
+
+  .role {
+    display: flex; align-items: center; gap: 15px; width: 100%; text-align: left;
+    padding: 19px 18px; margin-bottom: 12px;
+    border: 1px solid #2a3651; border-radius: 17px; background: #131c2e;
+    color: inherit; font: inherit; cursor: pointer;
+    transition: border-color .12s, background .12s, transform .06s;
+  }
+  .role:hover { border-color: #3a4a6d; background: #162034; }
+  .role:active { transform: scale(.985); }
+
+  .role .ico {
+    flex: none; width: 50px; height: 50px; border-radius: 14px;
+    display: grid; place-items: center; background: #1d2b47;
+  }
+  .role .ico svg { width: 26px; height: 26px; fill: #60a5fa; }
+  .role.driving .ico { background: #1e3a2a; }
+  .role.driving .ico svg { fill: #4ade80; }
+
+  .role .nm { font-size: 17px; font-weight: 700; }
+  .role .why { color: #93a1bd; font-size: 12.8px; margin-top: 3px; }
+  .role .chev { flex: none; color: #4a5a7d; font-size: 21px; }
+
+  .foot { color: #6b7a99; font-size: 12px; text-align: center; margin-top: 20px; }
+</style>
+</head>
+<body class="deciding">
+
+<div class="wrap">
+  <div class="brand">
+    <div class="name">&#128062; Bear Tracker</div>
+    <div class="tag">We Drive. You Thrive.</div>
+  </div>
+
+  <div class="ask">Which one are you?</div>
+
+  <button class="role" type="button" onclick="choose('student')">
+    <span class="ico">
+      <svg viewBox="0 0 24 24"><path d="M12 3 1 8l11 5 9-4.09V17h2V8L12 3ZM5 13.18v4L12 21l7-3.82v-4L12 17l-7-3.82Z"/></svg>
+    </span>
+    <span style="flex:1">
+      <span class="nm">I'm a student</span>
+      <div class="why">See where the shuttle is, when it reaches your stop,
+        and tap to tell the driver you're waiting.</div>
+    </span>
+    <span class="chev">&rsaquo;</span>
+  </button>
+
+  <button class="role driving" type="button" onclick="choose('driver')">
+    <span class="ico">
+      <svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Zm0 2a8 8 0 0 1 7.75 6h-3.3a4.99 4.99 0 0 0-8.9 0h-3.3A8 8 0 0 1 12 4Zm-1 9.9V20a8 8 0 0 1-6.75-6h3.3c.55 1 1.42 1.72 2.45 1.9ZM13 20v-6.1a5 5 0 0 0 2.45-1.9h3.3A8 8 0 0 1 13 20Zm-1-6a2 2 0 1 1 0-4 2 2 0 0 1 0 4Z"/></svg>
+    </span>
+    <span style="flex:1">
+      <span class="nm">I'm driving</span>
+      <div class="why">Share your location with students and post announcements
+        to everyone on the route.</div>
+    </span>
+    <span class="chev">&rsaquo;</span>
+  </button>
+
+  <div class="foot">We'll remember this. You can switch any time.</div>
+</div>
+
+<script>
+/* Two jobs, and the order matters.
+
+   FIRST: a returning user shouldn't be asked again every morning. We remember
+   the choice and forward straight to their page.
+
+   SECOND: they have to be able to change it - a student who starts driving,
+   or you, testing both sides. The switch link on either page clears the saved
+   role and comes back here with ?pick, which is what suppresses the forward. */
+
+const REMEMBER = "bear-role";
+const PAGES = { student: "/student", driver: "/driver" };
+
+function choose(role) {
+  try { localStorage.setItem(REMEMBER, role); } catch (err) { /* private mode */ }
+  location.replace(PAGES[role]);
+}
+
+(function decide() {
+  const asked = new URLSearchParams(location.search).has("pick");
+  let saved = null;
+  try { saved = localStorage.getItem(REMEMBER); } catch (err) { /* private mode */ }
+
+  if (!asked && PAGES[saved]) {
+    location.replace(PAGES[saved]);
+    return;                       // stay hidden - we're leaving anyway
+  }
+  document.body.classList.remove("deciding");
+})();
+</script>
+
+</body>
+</html>

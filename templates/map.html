@@ -1,0 +1,453 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<title>Bear Tracker</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1220; }
+  body { font: 15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #eef2f9; }
+
+  #map { position: fixed; inset: 0; background: #0e1626; }
+  .leaflet-container { background: #0e1626; }
+  .leaflet-tile-pane { filter: brightness(.65) saturate(.7) contrast(1.05) hue-rotate(195deg); }
+  .leaflet-control-attribution { background: rgba(11,18,32,.7) !important; font-size: 10px; }
+  .leaflet-control-attribution, .leaflet-control-attribution a { color: #93a1bd !important; }
+
+  .topbar {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 1000;
+    display: flex; align-items: baseline; gap: 9px;
+    padding: max(12px, env(safe-area-inset-top)) 16px 22px;
+    font-weight: 700; background: linear-gradient(180deg, rgba(11,18,32,.95), transparent);
+    pointer-events: none;
+  }
+  .topbar .tag { font-size: 11px; font-weight: 600; color: #93a1bd; }
+  .topbar .spacer { flex: 1; }
+  .topbar .swap {
+    pointer-events: auto; align-self: center;
+    padding: 5px 11px; border-radius: 999px;
+    border: 1px solid #2a3651; background: rgba(19,28,46,.9); color: #93a1bd;
+    font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;
+  }
+  .topbar .swap:active { background: #24314e; }
+
+  /* --- the shuttle --- */
+  .shuttle { position: relative; width: 46px; height: 46px; display: grid; place-items: center; }
+  .shuttle .badge {
+    width: 40px; height: 40px; border-radius: 50%; display: grid; place-items: center;
+    background: #1d4ed8; border: 2.5px solid #fff; box-shadow: 0 4px 16px rgba(0,0,0,.6);
+  }
+  .shuttle svg { width: 21px; height: 21px; fill: #fff; }
+  .shuttle .arrow {
+    position: absolute; top: -3px; left: 50%; width: 0; height: 0;
+    border-left: 6px solid transparent; border-right: 6px solid transparent;
+    border-bottom: 9px solid #fff; transform-origin: 50% 26px;
+    filter: drop-shadow(0 1px 2px rgba(0,0,0,.5));
+  }
+  .shuttle .pulse {
+    position: absolute; inset: 0; border-radius: 50%;
+    background: rgba(29,78,216,.4); animation: pulse 2.4s ease-out infinite;
+  }
+  @keyframes pulse { 0% { transform: scale(.6); opacity: .7; } 100% { transform: scale(2.1); opacity: 0; } }
+
+  /* --- stops on the map --- */
+  .stop-dot {
+    width: 13px; height: 13px; border-radius: 50%;
+    background: #94a3b8; border: 3px solid #0b1220; box-shadow: 0 0 0 1px rgba(255,255,255,.4);
+  }
+  .stop-dot.next { background: #22c55e; box-shadow: 0 0 0 6px rgba(34,197,94,.25); }
+  .stop-dot.picked { transform: scale(1.45); background: #fff; }
+
+  /* --- announcements --- */
+  .notices {
+    position: fixed; left: 12px; right: 12px; z-index: 1001;
+    top: calc(max(12px, env(safe-area-inset-top)) + 44px);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+  .notice {
+    display: flex; align-items: flex-start; gap: 11px; padding: 12px 14px; border-radius: 14px;
+    border: 1px solid #2a3651; background: #131c2e; box-shadow: 0 4px 20px rgba(0,0,0,.45);
+    font-size: 13.5px; line-height: 1.4; animation: rise .3s ease-out;
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(-8px); } }
+  .notice .icon { flex: none; font-size: 15px; }
+  .notice .when { color: #93a1bd; font-size: 11.5px; margin-top: 3px; }
+  .notice.urgent { border-color: rgba(239,68,68,.55); background: rgba(62,18,22,.97); }
+  .notice.warn   { border-color: rgba(245,158,11,.5); background: rgba(58,40,12,.97); }
+
+  /* --- bottom panel --- */
+  .panel {
+    position: fixed; left: 12px; right: 12px; z-index: 1000;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    max-height: 64vh; display: flex; flex-direction: column;
+    background: #131c2e; border: 1px solid #2a3651; border-radius: 16px;
+    box-shadow: 0 -6px 30px rgba(0,0,0,.5); overflow: hidden;
+  }
+  .status {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 16px; border-bottom: 1px solid #2a3651;
+  }
+  .status .dot { flex: none; width: 11px; height: 11px; border-radius: 50%; background: #6b7a99; }
+  .status.live .dot { background: #22c55e; box-shadow: 0 0 0 4px rgba(34,197,94,.2); }
+  .status .headline { font-weight: 700; font-size: 16px; }
+  .status .sub { color: #93a1bd; font-size: 12.5px; margin-top: 2px; }
+  .status .grow { flex: 1; min-width: 0; }
+
+  .stoplist { overflow-y: auto; padding: 5px 8px 9px; }
+  .stoprow {
+    display: flex; align-items: center; gap: 11px; width: 100%;
+    padding: 10px; border: none; border-radius: 11px;
+    background: none; color: inherit; font: inherit; text-align: left; cursor: pointer;
+  }
+  .stoprow:active { background: #1e2a44; }
+  .stoprow.next { background: rgba(34,197,94,.1); }
+  .stoprow .num {
+    flex: none; width: 23px; height: 23px; border-radius: 50%; display: grid; place-items: center;
+    background: #24314e; color: #93a1bd; font-size: 11px; font-weight: 700;
+  }
+  .stoprow.next .num { background: #22c55e; color: #06240f; }
+  .stoprow .grow { flex: 1; min-width: 0; }
+  .stoprow .nm { font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stoprow .sub { color: #93a1bd; font-size: 11.5px; margin-top: 1px; }
+  .stoprow .mins { flex: none; font-weight: 800; font-size: 17px; font-variant-numeric: tabular-nums; }
+  .stoprow .mins small { font-size: 10px; font-weight: 600; color: #93a1bd; display: block; text-align: right; }
+  .stoprow.next .mins { color: #22c55e; }
+
+  .detail { padding: 6px 16px 18px; }
+  .detail .big { font-size: 46px; font-weight: 800; line-height: 1; }
+  .detail .big small { font-size: 14px; font-weight: 600; color: #93a1bd; margin-left: 7px; }
+  .detail .away {
+    display: inline-block; margin-top: 13px; padding: 7px 13px; border-radius: 999px;
+    background: #24314e; font-size: 13px; font-weight: 600;
+  }
+  .detail .addr { color: #93a1bd; font-size: 13px; margin-top: 12px; }
+  .backbtn {
+    margin: 4px 0 10px; padding: 6px 13px; border-radius: 999px;
+    border: 1px solid #2a3651; background: #1b2740; color: #93a1bd;
+    font: inherit; font-size: 12.5px; cursor: pointer;
+  }
+
+  /* --- tell the driver something (taps, never typing) --- */
+  .tellbar { margin-top: 18px; border-top: 1px solid #22304c; padding-top: 14px; }
+  .tellbar .lede { color: #93a1bd; font-size: 12px; font-weight: 600;
+                   text-transform: uppercase; letter-spacing: .05em; margin-bottom: 9px; }
+  .tell {
+    display: block; width: 100%; text-align: left; margin-bottom: 7px;
+    padding: 11px 13px; border-radius: 11px; border: 1px solid #2a3651;
+    background: #1b2740; color: #e8eefc; font: inherit; font-size: 13.5px;
+    font-weight: 600; cursor: pointer;
+  }
+  .tell:active { background: #24314e; }
+  .tell.sent { border-color: rgba(34,197,94,.5); color: #22c55e; background: #14251c; }
+  .tell .tick { float: right; opacity: 0; }
+  .tell.sent .tick { opacity: 1; }
+
+  /* how many other people have tapped the same thing */
+  .tally {
+    display: inline-flex; align-items: center; gap: 5px; margin-top: 10px;
+    padding: 6px 12px; border-radius: 999px; background: #1e3a2a;
+    color: #4ade80; font-size: 12.5px; font-weight: 600;
+  }
+  .stoprow .people { color: #4ade80; font-weight: 700; }
+
+  @media (min-width: 700px) {
+    .panel, .notices { left: auto; width: 390px; }
+    .notices { right: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">&#128062; Bear Tracker <span class="tag">We Drive. You Thrive.</span>
+  <span class="spacer"></span>
+  <button class="swap" type="button" onclick="switchRole()">Student &#8646;</button>
+</div>
+<div id="map"></div>
+<div class="notices" id="notices"></div>
+
+<div class="panel">
+  <div class="status" id="status">
+    <span class="dot"></span>
+    <div class="grow">
+      <div class="headline" id="headline">Loading&hellip;</div>
+      <div class="sub" id="sub">Connecting</div>
+    </div>
+  </div>
+  <div class="stoplist" id="stoplist"></div>
+</div>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+/* Ask the server where the bus is every 3 seconds, and draw the answer.       */
+
+const POLL_MS = 3000;
+
+const map = L.map("map", { zoomControl: false }).setView([35.662, -80.478], 13);
+L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+  maxZoom: 19,
+  attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+}).addTo(map);
+
+const headline = document.getElementById("headline");
+const sub = document.getElementById("sub");
+const statusBox = document.getElementById("status");
+const stoplist = document.getElementById("stoplist");
+const notices = document.getElementById("notices");
+
+/* --- going back to the front door ---------------------------------------- */
+
+// Forget the saved role and return to the picker. The ?pick is what stops the
+// picker forwarding straight back here on arrival.
+function switchRole() {
+  try { localStorage.removeItem("bear-role"); } catch (err) { /* private mode */ }
+  location.href = "/?pick=1";
+}
+
+/* --- telling the driver something ----------------------------------------
+   Students tap, they never type. So there is nothing here that sanitises or
+   moderates text, because no text ever exists - only a stop id and one of the
+   fixed kinds below, both of which the server checks against its own list. */
+
+const REPORT_KINDS = {{ reports | tojson }};
+
+// A random string this browser keeps, so one phone counts once. It is not a
+// login, it identifies nobody, and clearing your browser data resets it.
+let deviceId;
+try {
+  deviceId = localStorage.getItem("bear-device");
+  if (!deviceId) {
+    deviceId = Math.random().toString(36).slice(2) + Date.now().toString(36);
+    localStorage.setItem("bear-device", deviceId);
+  }
+} catch (err) {
+  // Private browsing blocks storage. Fall back to a per-session id: the tally
+  // gets a little less accurate, the page still works.
+  deviceId = Math.random().toString(36).slice(2);
+}
+
+const sentThisVisit = new Set();   // what you've tapped, so the button can confirm
+
+function tell(stopId, kind) {
+  sentThisVisit.add(stopId + ":" + kind);
+  render();
+  fetch("/api/reports", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ stop: stopId, kind, device: deviceId }),
+  }).then(r => r.json()).then(data => {
+    if (data.reports && latest) { latest.reports = data.reports; render(); }
+  }).catch(() => {});
+}
+
+let stops = [];              // the route, fetched once
+const stopMarkers = new Map();
+let picked = null;           // the stop the student tapped, if any
+let latest = null;           // the most recent answer from the server
+
+/* --- draw the route once ------------------------------------------------- */
+
+fetch("/api/stops").then(r => r.json()).then(data => {
+  stops = data.stops;
+
+  // The real roads if the server has them, otherwise straight lines between
+  // the stops - the same fallback the ETA maths makes, drawn honestly.
+  const line = data.geometry && data.geometry.length
+    ? data.geometry
+    : stops.map(s => [s.lat, s.lng]).concat([[stops[0].lat, stops[0].lng]]);
+
+  L.polyline(line, { color: "#1d4ed8", weight: 5, opacity: .35 }).addTo(map);
+  L.polyline(line, { color: "#60a5fa", weight: 2, opacity: .8 }).addTo(map);
+
+  stops.forEach(s => {
+    const marker = L.marker([s.lat, s.lng], {
+      icon: L.divIcon({ className: "", iconSize: [13, 13], iconAnchor: [6, 6],
+                        html: '<div class="stop-dot"></div>' }),
+      title: s.name,
+    }).addTo(map).on("click", () => { picked = s.id; render(); });
+    stopMarkers.set(s.id, marker);
+  });
+
+  map.fitBounds(L.latLngBounds(line), { padding: [45, 45] });
+  poll();
+});
+
+/* --- the shuttle icon, gliding ------------------------------------------- */
+
+const icon = L.divIcon({
+  className: "", iconSize: [46, 46], iconAnchor: [23, 23],
+  html: `<div class="shuttle"><div class="pulse"></div><div class="arrow" id="arrow"></div>
+     <div class="badge"><svg viewBox="0 0 24 24"><path d="M4 16V6a3 3 0 0 1 3-3h10a3 3 0 0 1 3 3v10a2 2 0 0 1-1 1.7V19a1 1 0 0 1-1 1h-1a1 1 0 0 1-1-1v-1H8v1a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1v-1.3A2 2 0 0 1 4 16Zm2-9v5h12V7Zm1.5 9a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Zm9 0a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3Z"/></svg></div></div>`,
+});
+
+let marker = null, shown = null, target = null;
+
+// The server only speaks every 3 seconds. Sliding between the last position and
+// the new one is what stops the bus teleporting in little jumps.
+function glide() {
+  if (shown && target && marker) {
+    const ease = .08;
+    shown.lat += (target.lat - shown.lat) * ease;
+    shown.lng += (target.lng - shown.lng) * ease;
+    shown.heading += (((target.heading - shown.heading + 540) % 360) - 180) * ease;
+    marker.setLatLng([shown.lat, shown.lng]);
+    const a = document.getElementById("arrow");
+    if (a) a.style.transform = `translateX(-50%) rotate(${shown.heading}deg)`;
+  }
+  requestAnimationFrame(glide);
+}
+requestAnimationFrame(glide);
+
+/* --- announcements -------------------------------------------------------- */
+
+const ICONS = { urgent: "⚠️", warn: "\u{1F7E1}", info: "ℹ️" };
+let noticeSignature = "";
+
+function escapeHtml(t) { const d = document.createElement("div"); d.textContent = t; return d.innerHTML; }
+
+function drawNotices(list) {
+  const sig = JSON.stringify(list.map(a => a.id));
+  if (sig === noticeSignature) return;
+  noticeSignature = sig;
+  notices.innerHTML = list.map(a => `<div class="notice ${a.level}">
+      <span class="icon">${ICONS[a.level] || ICONS.info}</span>
+      <div>${escapeHtml(a.text)}<div class="when">From the driver &middot;
+        ${a.minutes_ago < 1 ? "just now" : a.minutes_ago + " min ago"}</div></div>
+    </div>`).join("");
+}
+
+/* --- the ETA list --------------------------------------------------------- */
+
+function render() {
+  const data = latest;
+  if (!data) return;
+
+  drawNotices(data.announcements || []);
+
+  // No bus on duty: show the route, but no numbers we can't back up.
+  if (!data.running) {
+    statusBox.classList.remove("live");
+    headline.textContent = "No shuttle running";
+    sub.textContent = data.reason;
+    // No ETAs to show, but this is exactly when a student most wants to say
+    // "the bus never came" - so the stops stay tappable and the report panel
+    // stays reachable.
+    const off = stops.find(s => s.id === picked);
+    stoplist.innerHTML = off
+      ? `<div class="detail">
+          <button class="backbtn" onclick="clearPick()">&lsaquo; All stops</button>
+          <div style="font-weight:700;font-size:19px;margin-bottom:6px">${off.name}</div>
+          <div class="addr">${off.address}${off.note ? "<br>" + off.note : ""}</div>
+          ${tellBar(off.id)}
+        </div>`
+      : stops.map(s => `<button class="stoprow" onclick="pick('${s.id}')">
+          <span class="num">${s.order}</span>
+          <span class="grow"><span class="nm">${s.name}</span>
+            <span class="sub">${s.address}${waitingNote(s.id)}</span></span>
+        </button>`).join("");
+    if (marker) { map.removeLayer(marker); marker = null; shown = null; target = null; }
+    stopMarkers.forEach(m => m.setIcon(L.divIcon({ className: "", iconSize: [13,13], iconAnchor: [6,6],
+      html: '<div class="stop-dot"></div>' })));
+    return;
+  }
+
+  // Move the bus.
+  target = { lat: data.lat, lng: data.lng, heading: data.heading ?? 0 };
+  if (!marker) { shown = { ...target }; marker = L.marker([shown.lat, shown.lng], { icon }).addTo(map); }
+
+  statusBox.classList.add("live");
+  headline.textContent = data.waiting_at_gate
+    ? `Waiting at Horseshoe Gate`
+    : `Next stop: ${data.next_stop}`;
+  sub.textContent = data.waiting_at_gate
+    ? `Departs ${data.next_departure} · in ${data.layover_minutes} min`
+    : `${data.speed_mph} mph · updated ${data.seconds_ago}s ago`;
+
+  // Colour the stop dots: green for the one the bus is heading to.
+  data.arrivals.forEach(a => {
+    const m = stopMarkers.get(a.id);
+    if (!m) return;
+    const cls = picked === a.id ? "picked" : a.is_next ? "next" : "";
+    m.setIcon(L.divIcon({ className: "", iconSize: [13,13], iconAnchor: [6,6],
+      html: `<div class="stop-dot ${cls}"></div>` }));
+  });
+
+  // One stop, isolated - what a student gets when they tap their stop.
+  if (picked) {
+    const a = data.arrivals.find(x => x.id === picked);
+    if (a) {
+      stoplist.innerHTML = `<div class="detail">
+          <button class="backbtn" onclick="clearPick()">&lsaquo; All stops</button>
+          <div style="font-weight:700;font-size:19px;margin-bottom:10px">${a.name}</div>
+          <div class="big">${a.at_stop ? "Here" : a.eta_minutes}${a.at_stop ? "" : '<small>min away</small>'}</div>
+          <div class="away">Bus is ${a.stops_away} stop${a.stops_away === 1 ? "" : "s"} away</div>
+          <div class="addr">Stop ${a.order} of ${stops.length} &middot; ${a.address}
+            ${a.note ? "<br>" + a.note : ""}</div>
+          ${tellBar(a.id)}
+        </div>`;
+      return;
+    }
+  }
+
+  // Default: every stop, with its own ETA. Read the one you're standing at.
+  stoplist.innerHTML = data.arrivals.map(a => `<button class="stoprow ${a.is_next ? "next" : ""}"
+      onclick="pick('${a.id}')">
+      <span class="num">${a.order}</span>
+      <span class="grow"><span class="nm">${a.name}</span>
+        <span class="sub">${a.stops_away} stop${a.stops_away === 1 ? "" : "s"} away${waitingNote(a.id)}</span></span>
+      <span class="mins">${a.at_stop ? "Here" : a.eta_minutes}<small>${a.at_stop ? "now" : "min"}</small></span>
+    </button>`).join("");
+}
+
+/* --- the tap-to-tell panel ------------------------------------------------ */
+
+function waitingNote(stopId) {
+  const n = ((latest && latest.reports && latest.reports[stopId]) || {}).waiting || 0;
+  return n ? ` &middot; <span class="people">${n} waiting</span>` : "";
+}
+
+function tellBar(stopId) {
+  const counts = (latest && latest.reports && latest.reports[stopId]) || {};
+
+  const buttons = Object.entries(REPORT_KINDS).map(([kind, spec]) => {
+    const mine = sentThisVisit.has(stopId + ":" + kind);
+    return `<button class="tell ${mine ? "sent" : ""}"
+        onclick="tell('${stopId}', '${kind}')">
+        ${escapeHtml(spec.button)}<span class="tick">&check;</span>
+      </button>`;
+  }).join("");
+
+  // Show the headcount only when it's more than just you - "1 waiting" when
+  // you're the one waiting is noise, not information.
+  const waiting = counts.waiting || 0;
+  const tally = waiting > 1
+    ? `<div class="tally">&#128101; ${waiting} people waiting here</div>` : "";
+
+  return `<div class="tellbar">
+      <div class="lede">Tell the driver</div>
+      ${buttons}${tally}
+    </div>`;
+}
+
+function pick(id) { picked = id; render(); }
+function clearPick() { picked = null; render(); }
+
+/* --- ask the server ------------------------------------------------------- */
+
+async function poll() {
+  try {
+    const res = await fetch("/api/shuttle", { cache: "no-store" });
+    latest = await res.json();
+    render();
+  } catch {
+    headline.textContent = "Can't reach the server";
+    sub.textContent = "Check your connection";
+  }
+}
+setInterval(poll, POLL_MS);
+</script>
+
+</body>
+</html>
